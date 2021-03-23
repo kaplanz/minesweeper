@@ -3,6 +3,7 @@
 //! `minesweeper` is a library to handle the logic of the video game of the same name.
 
 use rand::seq::IteratorRandom;
+use std::fmt::{self, Display};
 
 /// Minesweeper game.
 pub struct Minesweeper {
@@ -28,6 +29,17 @@ impl Minesweeper {
 
         // Play the turn on the board
         self.board.play(turn);
+    }
+}
+
+impl Display for Minesweeper {
+    /// Display the game.
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        for _ in 0..(self.board.width() - 1) {
+            write!(f, " ")?;
+        }
+        writeln!(f, "{:04}", self.config.bombs - self.board.flagged)?;
+        write!(f, "{}", self.board)
     }
 }
 
@@ -67,7 +79,10 @@ impl Config {
 }
 
 /// Board on which the game is played.
-struct Board(Vec<Vec<Tile>>);
+struct Board {
+    tiles: Vec<Vec<Tile>>,
+    flagged: u16,
+}
 
 // Implement accessors/mutators for Board
 impl Board {
@@ -77,7 +92,7 @@ impl Board {
     ///
     /// The `get` function will panic if `pos` is out of bounds.
     fn get(&self, pos: Position) -> &Tile {
-        &self.0[pos.0][pos.1]
+        &self.tiles[pos.0][pos.1]
     }
 
     /// Mutably borrow the tile at a position.
@@ -86,17 +101,17 @@ impl Board {
     ///
     /// The `get_mut` function will panic if `pos` is out of bounds.
     fn get_mut(&mut self, pos: Position) -> &mut Tile {
-        &mut self.0[pos.0][pos.1]
+        &mut self.tiles[pos.0][pos.1]
     }
 
     /// Get the board height.
     fn height(&self) -> usize {
-        self.0.len()
+        self.tiles.len()
     }
 
     /// Get the board width.
     fn width(&self) -> usize {
-        self.0[0].len()
+        self.tiles[0].len()
     }
 }
 
@@ -106,7 +121,10 @@ impl Board {
     ///
     /// Initially, all tiles on the board aren't set.
     fn new(height: usize, width: usize) -> Board {
-        Board(vec![vec![Tile::Nil; width]; height])
+        Board {
+            tiles: vec![vec![Tile::Nil; width]; height],
+            flagged: 0,
+        }
     }
 
     /// Initialize the board.
@@ -141,12 +159,6 @@ impl Board {
 
     /// Play a turn.
     fn play(&mut self, turn: Turn) {
-        // Ensure the tile is hidden
-        if let Tile::Hidden(_) = self.get(turn.pos) {
-        } else {
-            return;
-        }
-
         // Perform action on tile
         match turn.action {
             Action::Reveal => self.reveal(turn.pos),
@@ -205,15 +217,33 @@ impl Board {
 
     /// Flag a tile.
     fn flag(&mut self, pos: Position) {
-        if let Tile::Hidden(state) = self.get(pos) {
-            *self.get_mut(pos) = Tile::Flagged(*state);
+        match *self.get(pos) {
+            Tile::Hidden(state) | Tile::Marked(state) => {
+                *self.get_mut(pos) = Tile::Flagged(state);
+                self.flagged += 1;
+            }
+            Tile::Flagged(state) => {
+                *self.get_mut(pos) = Tile::Hidden(state);
+                self.flagged -= 1;
+            }
+            _ => (),
         }
     }
 
     /// Mark a tile.
     fn mark(&mut self, pos: Position) {
-        if let Tile::Hidden(state) = self.get(pos) {
-            *self.get_mut(pos) = Tile::Marked(*state);
+        match *self.get(pos) {
+            Tile::Hidden(state) => {
+                *self.get_mut(pos) = Tile::Marked(state);
+            }
+            Tile::Flagged(state) => {
+                self.flag(pos); // remove flag before marking
+                *self.get_mut(pos) = Tile::Marked(state);
+            }
+            Tile::Marked(state) => {
+                *self.get_mut(pos) = Tile::Hidden(state);
+            }
+            _ => (),
         }
     }
 
@@ -238,8 +268,11 @@ impl Board {
                 }
 
                 // Count bombs
-                if let Tile::Hidden(State::Bomb) = self.get(Position(row, col)) {
-                    count += 1;
+                match self.get(Position(row, col)) {
+                    Tile::Hidden(State::Bomb)
+                    | Tile::Flagged(State::Bomb)
+                    | Tile::Marked(State::Bomb) => count += 1,
+                    _ => (),
                 }
             }
         }
@@ -248,14 +281,65 @@ impl Board {
     }
 }
 
+impl Display for Board {
+    /// Display the game board.
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        // Print top border
+        write!(f, "┌")?;
+        for _ in 0..self.width() {
+            write!(f, "──")?;
+        }
+        writeln!(f, "─┐")?;
+
+        // Print each row of the board
+        for row in self.tiles.iter() {
+            write!(f, "│")?;
+            for tile in row.iter() {
+                write!(f, " {}", tile)?;
+            }
+            writeln!(f, " │")?;
+        }
+
+        // Print bottom border
+        write!(f, "└")?;
+        for _ in 0..self.width() {
+            write!(f, "──")?;
+        }
+        write!(f, "─┘")
+    }
+}
+
 /// A tile of the board.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 enum Tile {
     Hidden(State),
     Flagged(State),
     Marked(State),
     Revealed(u8),
     Nil,
+}
+
+impl Display for Tile {
+    /// Display a tile.
+    ///
+    /// | Tile          | Char |
+    /// | ------------- | ---- |
+    /// | `Hidden(_)`   | `◻`  |
+    /// | `Flagged(_)`  | `⚑`  |
+    /// | `Marked(_)`   | `⚐`  |
+    /// | `Revealed(0)` | ` `  |
+    /// | `Revealed(n)` | `n`  |
+    /// | `Nil`         | `◻`  |
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Tile::Hidden(_) => write!(f, "◻"),
+            Tile::Flagged(_) => write!(f, "⚑"),
+            Tile::Marked(_) => write!(f, "⚐"),
+            Tile::Revealed(0) => write!(f, " "),
+            Tile::Revealed(n) => write!(f, "{}", n),
+            Tile::Nil => write!(f, "◻"),
+        }
+    }
 }
 
 /// The state of a tile.
@@ -290,7 +374,7 @@ pub enum Action {
 
 /// A position on the board.
 #[derive(Clone, Copy)]
-pub struct Position(usize, usize);
+pub struct Position(pub usize, pub usize);
 
 #[cfg(test)]
 mod tests {
@@ -305,7 +389,7 @@ mod tests {
     fn is_initially_nil() {
         let game = setup();
 
-        for row in game.board.0 {
+        for row in game.board.tiles {
             for tile in row {
                 assert_eq!(tile, Tile::Nil);
             }
@@ -319,7 +403,7 @@ mod tests {
         game.play(turn);
 
         let mut bombs = 0;
-        for row in game.board.0 {
+        for row in game.board.tiles {
             for tile in row {
                 if let Tile::Hidden(State::Bomb) = tile {
                     bombs += 1;
