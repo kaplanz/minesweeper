@@ -207,20 +207,22 @@ impl Board {
     ///
     /// This will cause all adjacent tiles to be revealed.
     fn explore(&mut self, pos: Position) {
-        // FIXME: when should explore be allowed?
-        for i in vec![-1, 0, 1] {
-            for j in vec![-1, 0, 1] {
-                // Extract row and col
-                let row = (pos.0 as isize + i) as usize;
-                let col = (pos.1 as isize + j) as usize;
+        // Only explore tiles that are revealed
+        if let Some(Tile::Revealed(_)) = self.get(pos) {
+            for i in vec![-1, 0, 1] {
+                for j in vec![-1, 0, 1] {
+                    // Extract row and col
+                    let row = (pos.0 as isize + i) as usize;
+                    let col = (pos.1 as isize + j) as usize;
 
-                // Perform bounds check
-                if row >= self.height() || col >= self.width() {
-                    continue;
+                    // Perform bounds check
+                    if row >= self.height() || col >= self.width() {
+                        continue;
+                    }
+
+                    // Reveal adjacent tile
+                    self.reveal(Position(row, col));
                 }
-
-                // Reveal adjacent tile
-                self.reveal(Position(row, col));
             }
         }
     }
