@@ -60,14 +60,14 @@ fn get_turn() -> Turn {
 
         // Parse arguments
         let row = match input[1].parse::<usize>() {
-            Ok(x) => x - 1,
+            Ok(x) if x > 0 => x - 1,
             _ => {
                 eprintln!("error: could not parse row");
                 continue;
             }
         };
         let col = match input[2].parse::<usize>() {
-            Ok(x) => x - 1,
+            Ok(x) if x > 0 => x - 1,
             _ => {
                 eprintln!("error: could not parse col");
                 continue;
