@@ -165,33 +165,33 @@ impl Board {
             (row, col)
         };
 
-        // Closure to determine if a given position can host a bomb
-        let mut filterable = self.unrevealed - self.bombs - 1;
-        let mut viable_bomb = |(row, col)| {
-            if filterable == 0 {
-                return true;
-            }
+        // Closure to determine if a given row and col is adjacent to`pos`
+        // NOTE: a maximum of `filterable` adjacent bombs can be filtered
+        let mut filterable = cmp::min(
+            self.unrevealed - self.bombs - 1,
+            self.adjacent(pos, State::Empty) as u16,
+        );
+        let mut is_adjacent = |(row, col)| {
             let delta = (row as isize - pos.0 as isize, col as isize - pos.1 as isize);
-            if delta.0.abs() > 1 || delta.1.abs() > 1 {
-                true
-            } else {
+            let filtered = filterable > 0 && delta.0.abs() <= 1 && delta.1.abs() <= 1;
+            if filtered {
                 filterable -= 1;
-                false
             }
+            filtered
         };
 
         // Randomly choose locations of bombs:
-        // - create a range for flattened board
-        // - collect as a vector and shuffle in place
+        // - create a vector of flattened board
+        // - shuffle the board for bomb selection
         // - filter out `pos` since first guess can't be a bomb
         // - filter out some elements near `pos`
-        // - choose bombs from beginning of remaining shuffled tiles
+        // - take bombs from beginning of remaining tiles
         let mut bombs: Vec<_> = (0..self.unrevealed as usize).collect();
         bombs.shuffle(&mut rand::thread_rng());
         let bombs = bombs
             .into_iter()
             .filter(|x| *x != flatten(pos.0, pos.1))
-            .filter(|x| viable_bomb(unflatten(x)))
+            .filter(|x| !is_adjacent(unflatten(x)))
             .take(self.bombs as usize);
 
         // Set bombs on board
@@ -231,14 +231,12 @@ impl Board {
     ///
     /// In the event a zero is revealed, explore the tile.
     ///
-    /// # Notes
-    ///
     /// While this does indirectly recurse, it will eventually terminate.
     fn reveal(&mut self, pos: Position) {
         // Reveal tile at `pos`
         if let Some(Tile::Hidden(state)) = self.get_mut(pos) {
             match state {
-                State::Empty => self[pos] = Tile::Revealed(self.adjacent(pos)),
+                State::Empty => self[pos] = Tile::Revealed(self.adjacent(pos, State::Bomb)),
                 State::Bomb => {
                     eprintln!("warning: bomb revealed");
                     return;
@@ -264,22 +262,21 @@ impl Board {
     /// Explore a tile.
     ///
     /// This will cause all adjacent tiles to be revealed.
+    ///
+    /// # Panics
+    ///
+    /// Will panic if `pos` is out of bounds.
     fn explore(&mut self, pos: Position) {
         // Only explore tiles that are revealed
         // FIXME: only allow explore if adjacent flags met
-        if let Some(Tile::Revealed(_)) = self.get(pos) {
+        if let Tile::Revealed(_) = self[pos] {
             for i in vec![-1, 0, 1] {
                 for j in vec![-1, 0, 1] {
                     // Extract row and col
                     let row = (pos.0 as isize + i) as usize;
                     let col = (pos.1 as isize + j) as usize;
 
-                    // Perform bounds check
-                    if row >= self.height() || col >= self.width() {
-                        continue;
-                    }
-
-                    // Reveal adjacent tile
+                    // Reveal adjacent tile (performs bounds check)
                     self.reveal(Position(row, col));
                 }
             }
@@ -287,43 +284,47 @@ impl Board {
     }
 
     /// Flag a tile.
+    ///
+    /// # Panics
+    ///
+    /// Will panic if `pos` is out of bounds.
     fn flag(&mut self, pos: Position) {
-        if let Some(tile) = self.get_mut(pos) {
-            match tile.clone() {
-                Tile::Hidden(state) | Tile::Marked(state) => {
-                    self[pos] = Tile::Flagged(state);
-                    self.flagged += 1;
-                }
-                Tile::Flagged(state) => {
-                    self[pos] = Tile::Hidden(state);
-                    self.flagged -= 1;
-                }
-                _ => (),
+        match self[pos] {
+            Tile::Hidden(state) | Tile::Marked(state) => {
+                self[pos] = Tile::Flagged(state);
+                self.flagged += 1;
             }
+            Tile::Flagged(state) => {
+                self[pos] = Tile::Hidden(state);
+                self.flagged -= 1;
+            }
+            _ => (),
         }
     }
 
     /// Mark a tile.
+    ///
+    /// # Panics
+    ///
+    /// Will panic if `pos` is out of bounds.
     fn mark(&mut self, pos: Position) {
-        if let Some(tile) = self.get_mut(pos) {
-            match tile.clone() {
-                Tile::Hidden(state) => {
-                    self[pos] = Tile::Marked(state);
-                }
-                Tile::Flagged(state) => {
-                    self.flag(pos); // remove flag before marking
-                    self[pos] = Tile::Marked(state);
-                }
-                Tile::Marked(state) => {
-                    self[pos] = Tile::Hidden(state);
-                }
-                _ => (),
+        match self[pos] {
+            Tile::Hidden(state) => {
+                self[pos] = Tile::Marked(state);
             }
+            Tile::Flagged(state) => {
+                self.flag(pos); // remove flag before marking
+                self[pos] = Tile::Marked(state);
+            }
+            Tile::Marked(state) => {
+                self[pos] = Tile::Hidden(state);
+            }
+            _ => (),
         }
     }
 
-    /// Count adjacent bombs.
-    fn adjacent(&self, pos: Position) -> u8 {
+    /// Count state of adjacent tiles.
+    fn adjacent(&self, pos: Position, state: State) -> u8 {
         let mut count = 0;
 
         for i in vec![-1, 0, 1] {
@@ -337,19 +338,9 @@ impl Board {
                 let row = (pos.0 as isize + i) as usize;
                 let col = (pos.1 as isize + j) as usize;
 
-                // Perform bounds check
-                if row >= self.height() || col >= self.width() {
-                    continue;
-                }
-
-                // Count bombs
+                // Count bombs (performs bounds check)
                 if let Some(tile) = self.get(Position(row, col)) {
-                    match tile {
-                        Tile::Hidden(State::Bomb)
-                        | Tile::Flagged(State::Bomb)
-                        | Tile::Marked(State::Bomb) => count += 1,
-                        _ => (),
-                    }
+                    count += (tile.state() == state) as u8;
                 }
             }
         }
@@ -395,6 +386,16 @@ enum Tile {
     Revealed(u8),
 }
 
+impl Tile {
+    /// Get the state of a tile.
+    fn state(&self) -> State {
+        match self {
+            Tile::Hidden(state) | Tile::Flagged(state) | Tile::Marked(state) => *state,
+            _ => State::Empty,
+        }
+    }
+}
+
 impl Display for Tile {
     /// Display a tile.
     ///
@@ -424,7 +425,7 @@ enum State {
 }
 
 /// An action the board position to perform it on.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct Turn {
     action: Action,
     pos: Position,
@@ -438,7 +439,7 @@ impl Turn {
 }
 
 /// Actions performed on a board tile.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum Action {
     Reveal,
     Explore,
@@ -447,7 +448,7 @@ pub enum Action {
 }
 
 /// A position on the board.
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Position(pub usize, pub usize);
 
 #[cfg(test)]
