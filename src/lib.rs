@@ -34,10 +34,8 @@ impl Minesweeper {
 impl Display for Minesweeper {
     /// Display the game.
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        for _ in 0..(self.board.width() - 1) {
-            write!(f, " ")?;
-        }
         let bombs_remaining = self.board.bombs as i16 - self.board.flagged as i16;
+        write!(f, "{}", " ".repeat(self.board.width()))?;
         writeln!(f, "{:04}", bombs_remaining)?;
         write!(f, "{}", self.board)
     }
@@ -353,11 +351,7 @@ impl Display for Board {
     /// Display the game board.
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         // Print top border
-        write!(f, "┌")?;
-        for _ in 0..self.width() {
-            write!(f, "──")?;
-        }
-        writeln!(f, "─┐")?;
+        writeln!(f, "┌{}─┐", "──".repeat(self.width()))?;
 
         // Print each row of the board
         for row in self.tiles.iter() {
@@ -369,11 +363,7 @@ impl Display for Board {
         }
 
         // Print bottom border
-        write!(f, "└")?;
-        for _ in 0..self.width() {
-            write!(f, "──")?;
-        }
-        write!(f, "─┘")
+        write!(f, "└{}─┘", "──".repeat(self.width()))
     }
 }
 
