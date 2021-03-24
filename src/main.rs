@@ -8,11 +8,14 @@ fn main() {
     let config = Config::beginner();
     let mut game = Minesweeper::new(config);
 
-    loop {
+    while !game.over() {
         println!("{}", game);
         let turn = get_turn();
         game.play(turn);
     }
+
+    println!("{}", game);
+    println!("A winner is you!");
 }
 
 fn get_turn() -> Turn {

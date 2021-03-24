@@ -2,13 +2,13 @@
 //!
 //! `minesweeper` is a library to handle the logic of the video game of the same name.
 
-use rand::seq::IteratorRandom;
+use rand::prelude::*;
+use std::cmp;
 use std::fmt::{self, Display};
 use std::ops::{Index, IndexMut};
 
 /// Minesweeper game.
 pub struct Minesweeper {
-    config: Config,
     board: Board,
 }
 
@@ -16,20 +16,18 @@ impl Minesweeper {
     /// Create a new Minesweeper game.
     pub fn new(config: Config) -> Minesweeper {
         Minesweeper {
-            board: Board::new(config.height as usize, config.width as usize),
-            config,
+            board: Board::new(config),
         }
     }
 
     /// Play a turn of the game.
     pub fn play(&mut self, turn: Turn) {
-        // Initialize the board on first play
-        if !self.board.initialized {
-            self.board.init(self.config.bombs, turn.pos);
-        }
-
-        // Play the turn on the board
         self.board.play(turn);
+    }
+
+    /// Check if the game is over.
+    pub fn over(&self) -> bool {
+        self.board.over()
     }
 }
 
@@ -39,7 +37,8 @@ impl Display for Minesweeper {
         for _ in 0..(self.board.width() - 1) {
             write!(f, " ")?;
         }
-        writeln!(f, "{:04}", self.config.bombs - self.board.flagged)?;
+        let bombs_remaining = self.board.bombs as i16 - self.board.flagged as i16;
+        writeln!(f, "{:04}", bombs_remaining)?;
         write!(f, "{}", self.board)
     }
 }
@@ -80,22 +79,19 @@ impl Config {
 }
 
 /// Board on which the game is played.
+#[derive(Debug)]
 struct Board {
     tiles: Vec<Vec<Tile>>,
-    initialized: bool,
+    unrevealed: u16,
+    bombs: u16,
     flagged: u16,
 }
 
 // Accessors/mutators for Board
 impl Board {
-    /// Borrow the tile at a position.
-    fn get(&self, pos: Position) -> Option<&Tile> {
-        self.tiles.get(pos.0)?.get(pos.1)
-    }
-
-    /// Mutably borrow the tile at a position.
-    fn get_mut(&mut self, pos: Position) -> Option<&mut Tile> {
-        self.tiles.get_mut(pos.0)?.get_mut(pos.1)
+    /// Check if the game is initialized.
+    fn initialized(&self) -> bool {
+        (self.unrevealed as usize) < self.height() * self.width()
     }
 
     /// Get the board height.
@@ -106,6 +102,15 @@ impl Board {
     /// Get the board width.
     fn width(&self) -> usize {
         self.tiles[0].len()
+    }
+    /// Borrow the tile at a position.
+    fn get(&self, pos: Position) -> Option<&Tile> {
+        self.tiles.get(pos.0)?.get(pos.1)
+    }
+
+    /// Mutably borrow the tile at a position.
+    fn get_mut(&mut self, pos: Position) -> Option<&mut Tile> {
+        self.tiles.get_mut(pos.0)?.get_mut(pos.1)
     }
 }
 
@@ -128,42 +133,91 @@ impl Board {
     /// Create a new Board.
     ///
     /// Initially, all tiles on the board aren't set.
-    fn new(height: usize, width: usize) -> Board {
+    fn new(config: Config) -> Board {
+        let Config {
+            height,
+            width,
+            bombs,
+        } = config;
+        let height = height as usize;
+        let width = width as usize;
+        let area = (height * width) as u16;
+
         Board {
             tiles: vec![vec![Tile::Hidden(State::Empty); width]; height],
-            initialized: false,
+            bombs: cmp::min(bombs, area - 1),
+            unrevealed: area,
             flagged: 0,
         }
     }
 
     /// Initialize the board.
-    fn init(&mut self, bombs: u16, pos: Position) {
-        let (height, width) = (self.height(), self.width());
+    fn init(&mut self, pos: Position) {
+        let width = self.width();
+
+        // Closure to convert from row and col to index
+        let flatten = |row, col| row * width + col;
+
+        // Closure to convert from index to row and col
+        let unflatten = |x: &usize| {
+            let row = x / width;
+            let col = x % width;
+            (row, col)
+        };
+
+        // Closure to determine if a given position can host a bomb
+        let mut filterable = self.unrevealed - self.bombs - 1;
+        let mut viable_bomb = |(row, col)| {
+            if filterable == 0 {
+                return true;
+            }
+            let delta = (row as isize - pos.0 as isize, col as isize - pos.1 as isize);
+            if delta.0.abs() > 1 || delta.1.abs() > 1 {
+                true
+            } else {
+                filterable -= 1;
+                false
+            }
+        };
 
         // Randomly choose locations of bombs:
         // - create a range for flattened board
-        // - remove one tile representing `pos`
-        // - randomly choose positions for the bombs
-        // - increment all positions after `pos`
-        // NOTE: we cannot choose `pos` since the first reveal mustn't fail
-        let bombs = (0..(height * width - 1))
-            .choose_multiple(&mut rand::thread_rng(), bombs as usize)
+        // - collect as a vector and shuffle in place
+        // - filter out `pos` since first guess can't be a bomb
+        // - filter out some elements near `pos`
+        // - choose bombs from beginning of remaining shuffled tiles
+        let mut bombs: Vec<_> = (0..self.unrevealed as usize).collect();
+        bombs.shuffle(&mut rand::thread_rng());
+        let bombs = bombs
             .into_iter()
-            .map(|x| x + (x >= (pos.0 * width + pos.1)) as usize);
+            .filter(|x| *x != flatten(pos.0, pos.1))
+            .filter(|x| viable_bomb(unflatten(x)))
+            .take(self.bombs as usize);
 
         // Set bombs on board
         for bomb in bombs {
-            let i = bomb % height;
-            let j = (bomb - i) / width;
-            self[Position(i, j)] = Tile::Hidden(State::Bomb);
+            let (row, col) = unflatten(&bomb);
+            self[Position(row, col)] = Tile::Hidden(State::Bomb);
         }
+    }
 
-        // Mark board as initialized
-        self.initialized = true;
+    /// Check if the game is over.
+    fn over(&self) -> bool {
+        self.unrevealed == self.bombs
     }
 
     /// Play a turn.
     fn play(&mut self, turn: Turn) {
+        // Validate turn position
+        if let None = self.get(turn.pos) {
+            return;
+        }
+
+        // Initialize the board on first play
+        if !self.initialized() {
+            self.init(turn.pos);
+        }
+
         // Perform action on tile
         match turn.action {
             Action::Reveal => self.reveal(turn.pos),
@@ -185,8 +239,12 @@ impl Board {
         if let Some(Tile::Hidden(state)) = self.get_mut(pos) {
             match state {
                 State::Empty => self[pos] = Tile::Revealed(self.adjacent(pos)),
-                State::Bomb => (), // TODO: handle revealing a bomb
+                State::Bomb => {
+                    eprintln!("warning: bomb revealed");
+                    return;
+                } // TODO: handle revealing a bomb
             }
+            self.unrevealed -= 1;
         } else {
             // Return early if:
             // - `pos` is out of bounds
@@ -208,6 +266,7 @@ impl Board {
     /// This will cause all adjacent tiles to be revealed.
     fn explore(&mut self, pos: Position) {
         // Only explore tiles that are revealed
+        // FIXME: only allow explore if adjacent flags met
         if let Some(Tile::Revealed(_)) = self.get(pos) {
             for i in vec![-1, 0, 1] {
                 for j in vec![-1, 0, 1] {
@@ -388,7 +447,7 @@ pub enum Action {
 }
 
 /// A position on the board.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 pub struct Position(pub usize, pub usize);
 
 #[cfg(test)]
@@ -425,7 +484,7 @@ mod tests {
                 }
             }
         }
-        assert_eq!(bombs, game.config.bombs);
+        assert_eq!(bombs, game.board.bombs);
     }
 
     #[test]
