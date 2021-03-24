@@ -167,7 +167,7 @@ impl Board {
         // NOTE: a maximum of `filterable` adjacent bombs can be filtered
         let mut filterable = cmp::min(
             self.unrevealed - self.bombs - 1,
-            self.adjacent(pos, State::Empty) as u16,
+            self.adjacent_state(pos, State::Empty) as u16,
         );
         let mut is_adjacent = |(row, col)| {
             let delta = (row as isize - pos.0 as isize, col as isize - pos.1 as isize);
@@ -219,7 +219,7 @@ impl Board {
         // Perform action on tile
         match turn.action {
             Action::Reveal => self.reveal(turn.pos),
-            Action::Explore => self.explore(turn.pos),
+            Action::Explore => self.explore(turn.pos, false),
             Action::Flag => self.flag(turn.pos),
             Action::Mark => self.mark(turn.pos),
         }
@@ -234,7 +234,7 @@ impl Board {
         // Reveal tile at `pos`
         if let Some(Tile::Hidden(state)) = self.get_mut(pos) {
             match state {
-                State::Empty => self[pos] = Tile::Revealed(self.adjacent(pos, State::Bomb)),
+                State::Empty => self[pos] = Tile::Revealed(self.adjacent_state(pos, State::Bomb)),
                 State::Bomb => {
                     eprintln!("warning: bomb revealed");
                     return;
@@ -253,7 +253,7 @@ impl Board {
 
         // Explore tile if revealed a zero
         if let Tile::Revealed(0) = self[pos] {
-            self.explore(pos);
+            self.explore(pos, true);
         }
     }
 
@@ -264,18 +264,20 @@ impl Board {
     /// # Panics
     ///
     /// Will panic if `pos` is out of bounds.
-    fn explore(&mut self, pos: Position) {
+    fn explore(&mut self, pos: Position, recursed: bool) {
         // Only explore tiles that are revealed
-        // FIXME: only allow explore if adjacent flags met
-        if let Tile::Revealed(_) = self[pos] {
-            for i in vec![-1, 0, 1] {
-                for j in vec![-1, 0, 1] {
-                    // Extract row and col
-                    let row = (pos.0 as isize + i) as usize;
-                    let col = (pos.1 as isize + j) as usize;
+        if let Tile::Revealed(n) = self[pos] {
+            // Only allow explore if correct amount of adjacent flags
+            if recursed || self.adjacent_tile(pos, &Tile::Flagged(State::Bomb)) == n {
+                for i in vec![-1, 0, 1] {
+                    for j in vec![-1, 0, 1] {
+                        // Extract row and col
+                        let row = (pos.0 as isize + i) as usize;
+                        let col = (pos.1 as isize + j) as usize;
 
-                    // Reveal adjacent tile (performs bounds check)
-                    self.reveal(Position(row, col));
+                        // Reveal adjacent tile (performs bounds check)
+                        self.reveal(Position(row, col));
+                    }
                 }
             }
         }
@@ -321,8 +323,8 @@ impl Board {
         }
     }
 
-    /// Count state of adjacent tiles.
-    fn adjacent(&self, pos: Position, state: State) -> u8 {
+    /// Count matching state of adjacent tiles.
+    fn adjacent_state(&self, pos: Position, state: State) -> u8 {
         let mut count = 0;
 
         for i in vec![-1, 0, 1] {
@@ -339,6 +341,34 @@ impl Board {
                 // Count bombs (performs bounds check)
                 if let Some(tile) = self.get(Position(row, col)) {
                     count += (tile.state() == state) as u8;
+                }
+            }
+        }
+
+        count
+    }
+
+    /// Count matching discriminant of adjacent tiles.
+    ///
+    /// Only the variant itself is compared.
+    /// Ignores the interior value (if applicable to variant).
+    fn adjacent_tile(&self, pos: Position, tile: &Tile) -> u8 {
+        let mut count = 0;
+
+        for i in vec![-1, 0, 1] {
+            for j in vec![-1, 0, 1] {
+                // Skip counting self
+                if i == 0 && j == 0 {
+                    continue;
+                }
+
+                // Extract row and col
+                let row = (pos.0 as isize + i) as usize;
+                let col = (pos.1 as isize + j) as usize;
+
+                // Count bombs (performs bounds check)
+                if let Some(other) = self.get(Position(row, col)) {
+                    count += (std::mem::discriminant(tile) == std::mem::discriminant(&other)) as u8;
                 }
             }
         }
