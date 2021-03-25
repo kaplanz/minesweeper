@@ -15,7 +15,10 @@ fn main() {
     }
 
     println!("{}", game);
-    println!("A winner is you!");
+    match game.winner().unwrap() {
+        true => println!("A winner is you!"),
+        false => println!("Boom! You lose."),
+    }
 }
 
 fn get_turn() -> Turn {

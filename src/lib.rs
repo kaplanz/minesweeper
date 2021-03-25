@@ -29,6 +29,13 @@ impl Minesweeper {
     pub fn over(&self) -> bool {
         self.board.over()
     }
+
+    /// Get the winner of the game.
+    ///
+    /// Returns `None` if the game is still ongoing.
+    pub fn winner(&self) -> Option<bool> {
+        self.board.winner()
+    }
 }
 
 impl Display for Minesweeper {
@@ -80,6 +87,7 @@ impl Config {
 #[derive(Debug)]
 struct Board {
     tiles: Vec<Vec<Tile>>,
+    detonation: Option<Position>,
     unrevealed: u16,
     bombs: u16,
     flagged: u16,
@@ -143,6 +151,7 @@ impl Board {
 
         Board {
             tiles: vec![vec![Tile::Hidden(State::Empty); width]; height],
+            detonation: None,
             bombs: cmp::min(bombs, area - 1),
             unrevealed: area,
             flagged: 0,
@@ -199,16 +208,11 @@ impl Board {
         }
     }
 
-    /// Check if the game is over.
-    fn over(&self) -> bool {
-        self.unrevealed == self.bombs
-    }
-
-    /// Play a turn.
-    fn play(&mut self, turn: Turn) {
+    /// Play a turn of the game.
+    fn play(&mut self, turn: Turn) -> Option<&Tile> {
         // Validate turn position
         if let None = self.get(turn.pos) {
-            return;
+            return None;
         }
 
         // Initialize the board on first play
@@ -225,20 +229,45 @@ impl Board {
         }
     }
 
+    /// Check if the game is over.
+    fn over(&self) -> bool {
+        self.lost() || self.won()
+    }
+
+    /// Check if the game was lost.
+    fn lost(&self) -> bool {
+        self.detonation.is_some()
+    }
+
+    /// Check if the game was won.
+    fn won(&self) -> bool {
+        self.unrevealed == self.bombs
+    }
+
+    /// Get the winner of the game.
+    ///
+    /// Returns `None` if the game is still ongoing.
+    fn winner(&self) -> Option<bool> {
+        match self.over() {
+            true => Some(self.won() && !self.lost()),
+            false => None,
+        }
+    }
+
     /// Reveal a tile.
     ///
     /// In the event a zero is revealed, explore the tile.
     ///
     /// While this does indirectly recurse, it will eventually terminate.
-    fn reveal(&mut self, pos: Position) {
+    fn reveal(&mut self, pos: Position) -> Option<&Tile> {
         // Reveal tile at `pos`
         if let Some(Tile::Hidden(state)) = self.get_mut(pos) {
             match state {
                 State::Empty => self[pos] = Tile::Revealed(self.adjacent_state(pos, State::Bomb)),
                 State::Bomb => {
-                    eprintln!("warning: bomb revealed");
-                    return;
-                } // TODO: handle revealing a bomb
+                    self.detonation = Some(pos);
+                    return Some(&self[pos]);
+                }
             }
             self.unrevealed -= 1;
         } else {
@@ -246,7 +275,7 @@ impl Board {
             // - `pos` is out of bounds
             // - tile at `pos` is not hidden
             // NOTE: this is needed to terminate recursion
-            return;
+            return None;
         }
 
         // NOTE: after this point, `pos` is guaranteed to be in bounds
@@ -255,6 +284,8 @@ impl Board {
         if let Tile::Revealed(0) = self[pos] {
             self.explore(pos, true);
         }
+
+        Some(&self[pos])
     }
 
     /// Explore a tile.
@@ -264,7 +295,7 @@ impl Board {
     /// # Panics
     ///
     /// Will panic if `pos` is out of bounds.
-    fn explore(&mut self, pos: Position, recursed: bool) {
+    fn explore(&mut self, pos: Position, recursed: bool) -> Option<&Tile> {
         // Only explore tiles that are revealed
         if let Tile::Revealed(n) = self[pos] {
             // Only allow explore if correct amount of adjacent flags
@@ -279,8 +310,12 @@ impl Board {
                         self.reveal(Position(row, col));
                     }
                 }
+
+                return Some(&self[pos]);
             }
         }
+
+        None
     }
 
     /// Flag a tile.
@@ -288,17 +323,19 @@ impl Board {
     /// # Panics
     ///
     /// Will panic if `pos` is out of bounds.
-    fn flag(&mut self, pos: Position) {
+    fn flag(&mut self, pos: Position) -> Option<&Tile> {
         match self[pos] {
             Tile::Hidden(state) | Tile::Marked(state) => {
                 self[pos] = Tile::Flagged(state);
                 self.flagged += 1;
+                Some(&self[pos])
             }
             Tile::Flagged(state) => {
                 self[pos] = Tile::Hidden(state);
                 self.flagged -= 1;
+                Some(&self[pos])
             }
-            _ => (),
+            _ => None,
         }
     }
 
@@ -307,19 +344,22 @@ impl Board {
     /// # Panics
     ///
     /// Will panic if `pos` is out of bounds.
-    fn mark(&mut self, pos: Position) {
+    fn mark(&mut self, pos: Position) -> Option<&Tile> {
         match self[pos] {
             Tile::Hidden(state) => {
                 self[pos] = Tile::Marked(state);
+                Some(&self[pos])
             }
             Tile::Flagged(state) => {
                 self.flag(pos); // remove flag before marking
                 self[pos] = Tile::Marked(state);
+                Some(&self[pos])
             }
             Tile::Marked(state) => {
                 self[pos] = Tile::Hidden(state);
+                Some(&self[pos])
             }
-            _ => (),
+            _ => None,
         }
     }
 
@@ -577,7 +617,7 @@ mod tests {
                 }
             }
 
-            assert!(game.over());
+            assert!(game.winner().unwrap());
         }
     }
 
@@ -594,7 +634,7 @@ mod tests {
                     game.play(turn);
 
                     if let Tile::Hidden(State::Bomb) = tile {
-                        assert!(game.over());
+                        assert!(!game.winner().unwrap());
                     }
                 }
             }
