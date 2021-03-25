@@ -505,33 +505,132 @@ mod tests {
                 }
             }
         }
+
         assert_eq!(bombs, game.board.bombs);
+    }
+
+    #[test]
+    fn bounds_check_works() {
+        let mut game = setup();
+
+        let pos = Position(0, game.board.width());
+        assert!(matches!(game.board.get(pos), None));
+        let turn = Turn::new(Action::Reveal, pos);
+        game.play(turn);
+
+        let pos = Position(game.board.height(), 0);
+        assert!(matches!(game.board.get(pos), None));
+        let turn = Turn::new(Action::Reveal, pos);
+        game.play(turn);
     }
 
     #[test]
     fn do_reveal_works() {
         let mut game = setup();
 
-        let turn = Turn::new(Action::Reveal, Position(2, 2));
-        game.play(turn.clone());
-        assert!(matches!(game.board.get(turn.pos), Some(Tile::Revealed(_))));
+        let pos = Position(2, 2);
+        let turn = Turn::new(Action::Reveal, pos);
+        game.play(turn);
+
+        assert!(matches!(game.board.get(pos), Some(Tile::Revealed(_))));
     }
 
     #[test]
     fn do_flag_works() {
         let mut game = setup();
 
-        let turn = Turn::new(Action::Flag, Position(2, 2));
-        game.play(turn.clone());
-        assert!(matches!(game.board.get(turn.pos), Some(Tile::Flagged(_))));
+        let pos = Position(2, 2);
+        let turn = Turn::new(Action::Flag, pos);
+        game.play(turn);
+
+        assert!(matches!(game.board.get(pos), Some(Tile::Flagged(_))));
     }
 
     #[test]
     fn do_mark_works() {
         let mut game = setup();
 
-        let turn = Turn::new(Action::Mark, Position(2, 2));
-        game.play(turn.clone());
-        assert!(matches!(game.board.get(turn.pos), Some(Tile::Marked(_))));
+        let pos = Position(2, 2);
+        let turn = Turn::new(Action::Mark, pos);
+        game.play(turn);
+
+        assert!(matches!(game.board.get(pos), Some(Tile::Marked(_))));
+    }
+
+    #[test]
+    fn win_game_works() {
+        for _ in 0..128 {
+            let mut game = setup();
+
+            'outer: for row in 0..game.board.height() {
+                for col in 0..game.board.width() {
+                    let pos = Position(row, col);
+
+                    if let Tile::Hidden(State::Empty) = game.board[pos] {
+                        let turn = Turn::new(Action::Reveal, pos);
+                        game.play(turn);
+                    }
+
+                    if game.over() {
+                        break 'outer;
+                    }
+                }
+            }
+
+            assert!(game.over());
+        }
+    }
+
+    #[test]
+    fn lose_game_works() {
+        for _ in 0..128 {
+            let mut game = setup();
+
+            for row in 0..game.board.height() {
+                for col in 0..game.board.width() {
+                    let pos = Position(row, col);
+                    let tile = game.board[pos].clone();
+                    let turn = Turn::new(Action::Reveal, pos);
+                    game.play(turn);
+
+                    if let Tile::Hidden(State::Bomb) = tile {
+                        assert!(game.over());
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn bomb_avoidance_works() {
+        let mut game = setup();
+        game.board.bombs = 24;
+        let turn = Turn::new(Action::Reveal, Position(0, 0));
+        game.play(turn);
+        assert!(game.over());
+
+        let mut game = setup();
+        game.board.bombs = 24;
+        let turn = Turn::new(Action::Reveal, Position(0, 1));
+        game.play(turn);
+        assert!(game.over());
+
+        let mut game = setup();
+        game.board.bombs = 24;
+        let turn = Turn::new(Action::Reveal, Position(1, 1));
+        game.play(turn);
+        assert!(game.over());
+
+        let mut game = setup();
+        game.board.bombs = 24;
+        let turn = Turn::new(Action::Reveal, Position(1, 2));
+        game.play(turn);
+        assert!(game.over());
+
+        let mut game = setup();
+        game.board.bombs = 24;
+        let turn = Turn::new(Action::Reveal, Position(2, 2));
+        game.play(turn);
+        assert!(game.over());
     }
 }
