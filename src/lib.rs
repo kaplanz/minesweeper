@@ -318,7 +318,14 @@ impl Board {
         // Record location of detonation
         self.detonation = Some(pos);
 
-        // TODO: reveal all bombs
+        // Reveal all bombs
+        for row in self.tiles.iter_mut() {
+            for tile in row {
+                if tile.state() == State::Bomb {
+                    *tile = Tile::Detonated;
+                }
+            }
+        }
     }
 
     /// Explore a tile.
@@ -480,6 +487,7 @@ enum Tile {
     Flagged(State),
     Marked(State),
     Revealed(u8),
+    Detonated,
 }
 
 impl Tile {
@@ -502,6 +510,7 @@ impl Display for Tile {
     /// | `Marked(_)`   | `⚐`  |
     /// | `Revealed(0)` | ` `  |
     /// | `Revealed(n)` | `n`  |
+    /// | `Detonated`   | `☢︎`  |
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Tile::Hidden(_) => write!(f, "◻"),
@@ -509,6 +518,7 @@ impl Display for Tile {
             Tile::Marked(_) => write!(f, "⚐"),
             Tile::Revealed(0) => write!(f, " "),
             Tile::Revealed(n) => write!(f, "{}", n),
+            Tile::Detonated => write!(f, "☢︎"),
         }
     }
 }
