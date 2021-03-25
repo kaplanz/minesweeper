@@ -39,7 +39,6 @@ impl Minesweeper {
 }
 
 impl Display for Minesweeper {
-    /// Display the game.
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let bombs_remaining = self.board.bombs as i16 - self.board.flagged as i16;
         write!(f, "{}", " ".repeat(self.board.width()))?;
@@ -56,9 +55,9 @@ pub struct Config {
 }
 
 impl Config {
-    /// Create a new Config.
+    /// Create a new game Config.
     ///
-    /// Defaults to the BEGINNER configuration.
+    /// `bombs` is taken as a hint, and is constrained by the board dimensions.
     pub fn new(height: u8, width: u8, bombs: u16) -> Config {
         Config {
             height,
@@ -84,6 +83,8 @@ impl Config {
 }
 
 /// Board on which the game is played.
+///
+/// Responsible for managing the placement of tiles and handling game logic.
 #[derive(Debug)]
 struct Board {
     tiles: Vec<Vec<Tile>>,
@@ -93,9 +94,33 @@ struct Board {
     flagged: u16,
 }
 
-// Accessors/mutators for Board
 impl Board {
-    /// Check if the game is initialized.
+    /// Create a new Board.
+    ///
+    /// The newly created board is not yet initialized.
+    /// Bombs are placed as the first turn is played.
+    fn new(config: Config) -> Board {
+        let Config {
+            height,
+            width,
+            bombs,
+        } = config;
+        let height = height as usize;
+        let width = width as usize;
+        let area = (height * width) as u16;
+
+        Board {
+            tiles: vec![vec![Tile::Hidden(State::Empty); width]; height],
+            detonation: None,
+            bombs: cmp::min(bombs, area - 1),
+            unrevealed: area,
+            flagged: 0,
+        }
+    }
+}
+
+impl Board {
+    /// Check if the board is initialized.
     fn initialized(&self) -> bool {
         (self.unrevealed as usize) < self.height() * self.width()
     }
@@ -109,12 +134,17 @@ impl Board {
     fn width(&self) -> usize {
         self.tiles[0].len()
     }
+
     /// Borrow the tile at a position.
+    ///
+    /// Performs bounds check, and returns `None` variant on invalid position.
     fn get(&self, pos: Position) -> Option<&Tile> {
         self.tiles.get(pos.0)?.get(pos.1)
     }
 
     /// Mutably borrow the tile at a position.
+    ///
+    /// Performs bounds check, and returns `None` variant on invalid position.
     fn get_mut(&mut self, pos: Position) -> Option<&mut Tile> {
         self.tiles.get_mut(pos.0)?.get_mut(pos.1)
     }
@@ -134,31 +164,15 @@ impl IndexMut<Position> for Board {
     }
 }
 
-// Game logic for Board
 impl Board {
-    /// Create a new Board.
-    ///
-    /// Initially, all tiles on the board aren't set.
-    fn new(config: Config) -> Board {
-        let Config {
-            height,
-            width,
-            bombs,
-        } = config;
-        let height = height as usize;
-        let width = width as usize;
-        let area = (height * width) as u16;
-
-        Board {
-            tiles: vec![vec![Tile::Hidden(State::Empty); width]; height],
-            detonation: None,
-            bombs: cmp::min(bombs, area - 1),
-            unrevealed: area,
-            flagged: 0,
-        }
-    }
-
     /// Initialize the board.
+    ///
+    /// This function is responsible for determining the positions of bombs.
+    ///
+    /// Bombs are placed randomly with the following restrictions:
+    /// - the first play,`pos`, is guaranteed to be safe.
+    /// - if possible, `pos` will reveal a zero.
+    ///   (i.e. bombs will avoid being placed adjacent to `pos`.)
     fn init(&mut self, pos: Position) {
         let width = self.width();
 
@@ -209,8 +223,12 @@ impl Board {
     }
 
     /// Play a turn of the game.
+    ///
+    /// Ensures the turn is at a valid position.
+    ///
+    /// Calls `init` to initialize the board on the first play.
     fn play(&mut self, turn: Turn) -> Option<&Tile> {
-        // Validate turn position
+        // Perform bounds check
         if let None = self.get(turn.pos) {
             return None;
         }
@@ -256,16 +274,16 @@ impl Board {
 
     /// Reveal a tile.
     ///
-    /// In the event a zero is revealed, explore the tile.
+    /// Upon revealing a zero, `reveal` will explore the tile.
     ///
-    /// While this does indirectly recurse, it will eventually terminate.
+    /// This will lead to recursion if more zeros are revealed.
     fn reveal(&mut self, pos: Position) -> Option<&Tile> {
         // Reveal tile at `pos`
         if let Some(Tile::Hidden(state)) = self.get_mut(pos) {
             match state {
                 State::Empty => self[pos] = Tile::Revealed(self.adjacent_state(pos, State::Bomb)),
                 State::Bomb => {
-                    self.detonation = Some(pos);
+                    self.detonate(pos);
                     return Some(&self[pos]);
                 }
             }
@@ -274,7 +292,7 @@ impl Board {
             // Return early if:
             // - `pos` is out of bounds
             // - tile at `pos` is not hidden
-            // NOTE: this is needed to terminate recursion
+            // NOTE: this is the base case to terminate recursion
             return None;
         }
 
@@ -288,9 +306,28 @@ impl Board {
         Some(&self[pos])
     }
 
+    /// Detonate a bomb.
+    ///
+    /// Causes the game to be lost, and thus terminate.
+    /// Reveal the locations of all bombs.
+    ///
+    /// # Panics
+    ///
+    /// Will panic if `pos` is out of bounds.
+    fn detonate(&mut self, pos: Position) {
+        // Record location of detonation
+        self.detonation = Some(pos);
+
+        // TODO: reveal all bombs
+    }
+
     /// Explore a tile.
     ///
     /// This will cause all adjacent tiles to be revealed.
+    ///
+    /// When called by the user, we must ensure the action is valid.
+    /// For a user to explore, `pos` must be a revealed tile with the
+    /// correct amount of adjacent flags.
     ///
     /// # Panics
     ///
@@ -363,7 +400,7 @@ impl Board {
         }
     }
 
-    /// Count matching state of adjacent tiles.
+    /// Count adjacent tiles that match `state`.
     fn adjacent_state(&self, pos: Position, state: State) -> u8 {
         let mut count = 0;
 
@@ -388,10 +425,10 @@ impl Board {
         count
     }
 
-    /// Count matching discriminant of adjacent tiles.
+    /// Count adjacent tiles whose discriminant matches `tile`.
     ///
-    /// Only the variant itself is compared.
-    /// Ignores the interior value (if applicable to variant).
+    /// Only the variant discriminant itself is compared.
+    /// The interior value (if applicable to the variant) is ignored.
     fn adjacent_tile(&self, pos: Position, tile: &Tile) -> u8 {
         let mut count = 0;
 
@@ -418,7 +455,6 @@ impl Board {
 }
 
 impl Display for Board {
-    /// Display the game board.
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         // Print top border
         writeln!(f, "┌{}─┐", "──".repeat(self.width()))?;
