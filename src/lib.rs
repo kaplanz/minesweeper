@@ -8,6 +8,7 @@ use std::fmt::{self, Display};
 use std::ops::{Index, IndexMut};
 
 /// Minesweeper game.
+#[derive(Debug)]
 pub struct Minesweeper {
     board: Board,
 }
@@ -48,6 +49,7 @@ impl Display for Minesweeper {
 }
 
 /// Minesweeper configuration.
+#[derive(Debug)]
 pub struct Config {
     height: u8,
     width: u8,
@@ -554,7 +556,7 @@ pub enum Action {
 }
 
 /// A position on the board.
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug)]
 pub struct Position(pub usize, pub usize);
 
 #[cfg(test)]
