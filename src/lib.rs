@@ -43,7 +43,7 @@ impl Display for Minesweeper {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let bombs_remaining = self.board.bombs as i16 - self.board.flagged as i16;
         write!(f, "{}", " ".repeat(self.board.width()))?;
-        writeln!(f, "{:04}", bombs_remaining)?;
+        writeln!(f, "{:03}", bombs_remaining)?;
         write!(f, "{}", self.board)
     }
 }
@@ -122,51 +122,6 @@ impl Board {
 }
 
 impl Board {
-    /// Check if the board is initialized.
-    fn initialized(&self) -> bool {
-        (self.unrevealed as usize) < self.height() * self.width()
-    }
-
-    /// Get the board height.
-    fn height(&self) -> usize {
-        self.tiles.len()
-    }
-
-    /// Get the board width.
-    fn width(&self) -> usize {
-        self.tiles[0].len()
-    }
-
-    /// Borrow the tile at a position.
-    ///
-    /// Performs bounds check, and returns `None` variant on invalid position.
-    fn get(&self, pos: Position) -> Option<&Tile> {
-        self.tiles.get(pos.0)?.get(pos.1)
-    }
-
-    /// Mutably borrow the tile at a position.
-    ///
-    /// Performs bounds check, and returns `None` variant on invalid position.
-    fn get_mut(&mut self, pos: Position) -> Option<&mut Tile> {
-        self.tiles.get_mut(pos.0)?.get_mut(pos.1)
-    }
-}
-
-impl Index<Position> for Board {
-    type Output = Tile;
-
-    fn index(&self, pos: Position) -> &Self::Output {
-        &self.tiles[pos.0][pos.1]
-    }
-}
-
-impl IndexMut<Position> for Board {
-    fn index_mut(&mut self, pos: Position) -> &mut Self::Output {
-        &mut self.tiles[pos.0][pos.1]
-    }
-}
-
-impl Board {
     /// Initialize the board.
     ///
     /// This function is responsible for determining the positions of bombs.
@@ -226,12 +181,12 @@ impl Board {
 
     /// Play a turn of the game.
     ///
-    /// Ensures the turn is at a valid position.
+    /// Performs bounds check on `turn`.
     ///
     /// Calls `init` to initialize the board on the first play.
     fn play(&mut self, turn: Turn) -> Option<&Tile> {
         // Perform bounds check
-        if let None = self.get(turn.pos) {
+        if !self.in_bounds(turn.pos) {
             return None;
         }
 
@@ -254,16 +209,6 @@ impl Board {
         self.lost() || self.won()
     }
 
-    /// Check if the game was lost.
-    fn lost(&self) -> bool {
-        self.detonation.is_some()
-    }
-
-    /// Check if the game was won.
-    fn won(&self) -> bool {
-        self.unrevealed == self.bombs
-    }
-
     /// Get the winner of the game.
     ///
     /// Returns `None` if the game is still ongoing.
@@ -272,6 +217,16 @@ impl Board {
             true => Some(self.won() && !self.lost()),
             false => None,
         }
+    }
+
+    /// Check if the game was lost.
+    fn lost(&self) -> bool {
+        self.detonation.is_some()
+    }
+
+    /// Check if the game was won.
+    fn won(&self) -> bool {
+        self.unrevealed == self.bombs
     }
 
     /// Reveal a tile.
@@ -409,6 +364,11 @@ impl Board {
         }
     }
 
+    /// Check if a position is in bounds.
+    fn in_bounds(&self, pos: Position) -> bool {
+        self.get(pos).is_some()
+    }
+
     /// Count adjacent tiles that match `state`.
     fn adjacent_state(&self, pos: Position, state: State) -> u8 {
         let mut count = 0;
@@ -460,6 +420,51 @@ impl Board {
         }
 
         count
+    }
+}
+
+impl Board {
+    /// Check if the board is initialized.
+    fn initialized(&self) -> bool {
+        (self.unrevealed as usize) < self.height() * self.width()
+    }
+
+    /// Get the board height.
+    fn height(&self) -> usize {
+        self.tiles.len()
+    }
+
+    /// Get the board width.
+    fn width(&self) -> usize {
+        self.tiles[0].len()
+    }
+
+    /// Borrow the tile at a position.
+    ///
+    /// Performs bounds check, and returns `None` variant on invalid position.
+    fn get(&self, pos: Position) -> Option<&Tile> {
+        self.tiles.get(pos.0)?.get(pos.1)
+    }
+
+    /// Mutably borrow the tile at a position.
+    ///
+    /// Performs bounds check, and returns `None` variant on invalid position.
+    fn get_mut(&mut self, pos: Position) -> Option<&mut Tile> {
+        self.tiles.get_mut(pos.0)?.get_mut(pos.1)
+    }
+}
+
+impl Index<Position> for Board {
+    type Output = Tile;
+
+    fn index(&self, pos: Position) -> &Self::Output {
+        &self.tiles[pos.0][pos.1]
+    }
+}
+
+impl IndexMut<Position> for Board {
+    fn index_mut(&mut self, pos: Position) -> &mut Self::Output {
+        &mut self.tiles[pos.0][pos.1]
     }
 }
 
@@ -569,7 +574,7 @@ mod tests {
     }
 
     #[test]
-    fn is_initially_nil() {
+    fn starts_uninitialized_test() {
         let game = setup();
 
         for row in game.board.tiles {
@@ -580,7 +585,7 @@ mod tests {
     }
 
     #[test]
-    fn has_correct_number_of_bombs() {
+    fn has_correct_number_of_bombs_test() {
         let mut game = setup();
         let turn = Turn::new(Action::Reveal, Position(2, 2));
         game.play(turn.clone());
@@ -598,99 +603,7 @@ mod tests {
     }
 
     #[test]
-    fn bounds_check_works() {
-        let mut game = setup();
-
-        let pos = Position(0, game.board.width());
-        assert!(matches!(game.board.get(pos), None));
-        let turn = Turn::new(Action::Reveal, pos);
-        game.play(turn);
-
-        let pos = Position(game.board.height(), 0);
-        assert!(matches!(game.board.get(pos), None));
-        let turn = Turn::new(Action::Reveal, pos);
-        game.play(turn);
-    }
-
-    #[test]
-    fn do_reveal_works() {
-        let mut game = setup();
-
-        let pos = Position(2, 2);
-        let turn = Turn::new(Action::Reveal, pos);
-        game.play(turn);
-
-        assert!(matches!(game.board.get(pos), Some(Tile::Revealed(_))));
-    }
-
-    #[test]
-    fn do_flag_works() {
-        let mut game = setup();
-
-        let pos = Position(2, 2);
-        let turn = Turn::new(Action::Flag, pos);
-        game.play(turn);
-
-        assert!(matches!(game.board.get(pos), Some(Tile::Flagged(_))));
-    }
-
-    #[test]
-    fn do_mark_works() {
-        let mut game = setup();
-
-        let pos = Position(2, 2);
-        let turn = Turn::new(Action::Mark, pos);
-        game.play(turn);
-
-        assert!(matches!(game.board.get(pos), Some(Tile::Marked(_))));
-    }
-
-    #[test]
-    fn win_game_works() {
-        for _ in 0..128 {
-            let mut game = setup();
-
-            'outer: for row in 0..game.board.height() {
-                for col in 0..game.board.width() {
-                    let pos = Position(row, col);
-
-                    if let Tile::Hidden(State::Empty) = game.board[pos] {
-                        let turn = Turn::new(Action::Reveal, pos);
-                        game.play(turn);
-                    }
-
-                    if game.over() {
-                        break 'outer;
-                    }
-                }
-            }
-
-            assert!(game.winner().unwrap());
-        }
-    }
-
-    #[test]
-    fn lose_game_works() {
-        for _ in 0..128 {
-            let mut game = setup();
-
-            for row in 0..game.board.height() {
-                for col in 0..game.board.width() {
-                    let pos = Position(row, col);
-                    let tile = game.board[pos].clone();
-                    let turn = Turn::new(Action::Reveal, pos);
-                    game.play(turn);
-
-                    if let Tile::Hidden(State::Bomb) = tile {
-                        assert!(!game.winner().unwrap());
-                    }
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn bomb_avoidance_works() {
+    fn bomb_avoidance_test() {
         let mut game = setup();
         game.board.bombs = 24;
         let turn = Turn::new(Action::Reveal, Position(0, 0));
@@ -720,5 +633,99 @@ mod tests {
         let turn = Turn::new(Action::Reveal, Position(2, 2));
         game.play(turn);
         assert!(game.over());
+    }
+
+    #[test]
+    fn bounds_check_test() {
+        let mut game = setup();
+
+        let pos = Position(0, game.board.width());
+        assert!(matches!(game.board.get(pos), None));
+        let turn = Turn::new(Action::Reveal, pos);
+        game.play(turn);
+
+        let pos = Position(game.board.height(), 0);
+        assert!(matches!(game.board.get(pos), None));
+        let turn = Turn::new(Action::Reveal, pos);
+        game.play(turn);
+    }
+
+    #[test]
+    fn game_play_reveal_test() {
+        let mut game = setup();
+
+        let pos = Position(2, 2);
+        let turn = Turn::new(Action::Reveal, pos);
+        game.play(turn);
+
+        assert!(matches!(game.board.get(pos), Some(Tile::Revealed(_))));
+    }
+
+    #[test]
+    fn game_play_flag_test() {
+        let mut game = setup();
+
+        let pos = Position(2, 2);
+        let turn = Turn::new(Action::Flag, pos);
+        game.play(turn);
+
+        assert!(matches!(game.board.get(pos), Some(Tile::Flagged(_))));
+    }
+
+    #[test]
+    fn game_play_mark_test() {
+        let mut game = setup();
+
+        let pos = Position(2, 2);
+        let turn = Turn::new(Action::Mark, pos);
+        game.play(turn);
+
+        assert!(matches!(game.board.get(pos), Some(Tile::Marked(_))));
+    }
+
+    #[test]
+    fn game_over_won_test() {
+        for _ in 0..128 {
+            let mut game = setup();
+
+            'outer: for row in 0..game.board.height() {
+                for col in 0..game.board.width() {
+                    let pos = Position(row, col);
+
+                    if let Tile::Hidden(State::Empty) = game.board[pos] {
+                        let turn = Turn::new(Action::Reveal, pos);
+                        game.play(turn);
+                    }
+
+                    if game.over() {
+                        break 'outer;
+                    }
+                }
+            }
+
+            assert!(game.board.won());
+            assert!(game.winner().unwrap());
+        }
+    }
+
+    #[test]
+    fn game_over_lost_test() {
+        for _ in 0..128 {
+            let mut game = setup();
+
+            for row in 0..game.board.height() {
+                for col in 0..game.board.width() {
+                    let pos = Position(row, col);
+                    let tile = game.board[pos].clone();
+                    let turn = Turn::new(Action::Reveal, pos);
+                    game.play(turn);
+
+                    if let Tile::Hidden(State::Bomb) = tile {
+                        assert!(game.board.lost());
+                        assert!(!game.winner().unwrap());
+                    }
+                }
+            }
+        }
     }
 }
