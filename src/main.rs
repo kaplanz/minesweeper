@@ -10,8 +10,11 @@ fn main() {
 
     while !game.over() {
         println!("{}", game);
+
         let turn = get_turn();
-        game.play(turn);
+
+        // Panic on failure to play a turn
+        assert!(game.play(turn));
     }
 
     println!("{}", game);

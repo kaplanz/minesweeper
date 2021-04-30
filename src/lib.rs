@@ -22,8 +22,8 @@ impl Minesweeper {
     }
 
     /// Play a turn of the game.
-    pub fn play(&mut self, turn: Turn) {
-        self.board.play(turn);
+    pub fn play(&mut self, turn: Turn) -> bool {
+        self.board.play(turn).is_some()
     }
 
     /// Check if the game is over.
@@ -182,6 +182,9 @@ impl Board {
     /// Play a turn of the game.
     ///
     /// Performs bounds check on `turn`.
+    ///
+    /// Returns the revealed tile.
+    /// (Or `None` variant if the turn could not be played.)
     ///
     /// Calls `init` to initialize the board on the first play.
     fn play(&mut self, turn: Turn) -> Option<&Tile> {
