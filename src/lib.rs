@@ -2,10 +2,11 @@
 //!
 //! `minesweeper` is a library to handle the logic of the video game of the same name.
 
-use rand::prelude::*;
 use std::cmp;
 use std::fmt::{self, Display};
 use std::ops::{Index, IndexMut};
+
+use rand::prelude::*;
 
 /// Minesweeper game.
 #[derive(Debug)]
@@ -119,9 +120,7 @@ impl Board {
             flagged: 0,
         }
     }
-}
 
-impl Board {
     /// Initialize the board.
     ///
     /// This function is responsible for determining the positions of bombs.
@@ -304,8 +303,8 @@ impl Board {
         if let Tile::Revealed(n) = self[pos] {
             // Only allow explore if correct amount of adjacent flags
             if recursed || self.adjacent_tile(pos, &Tile::Flagged(State::Bomb)) == n {
-                for i in vec![-1, 0, 1] {
-                    for j in vec![-1, 0, 1] {
+                for i in [-1, 0, 1] {
+                    for j in [-1, 0, 1] {
                         // Extract row and col
                         let row = (pos.0 as isize + i) as usize;
                         let col = (pos.1 as isize + j) as usize;
@@ -376,8 +375,8 @@ impl Board {
     fn adjacent_state(&self, pos: Position, state: State) -> u8 {
         let mut count = 0;
 
-        for i in vec![-1, 0, 1] {
-            for j in vec![-1, 0, 1] {
+        for i in [-1, 0, 1] {
+            for j in [-1, 0, 1] {
                 // Skip counting self
                 if i == 0 && j == 0 {
                     continue;
@@ -404,8 +403,8 @@ impl Board {
     fn adjacent_tile(&self, pos: Position, tile: &Tile) -> u8 {
         let mut count = 0;
 
-        for i in vec![-1, 0, 1] {
-            for j in vec![-1, 0, 1] {
+        for i in [-1, 0, 1] {
+            for j in [-1, 0, 1] {
                 // Skip counting self
                 if i == 0 && j == 0 {
                     continue;
@@ -417,16 +416,14 @@ impl Board {
 
                 // Count bombs (performs bounds check)
                 if let Some(other) = self.get(Position(row, col)) {
-                    count += (std::mem::discriminant(tile) == std::mem::discriminant(&other)) as u8;
+                    count += (std::mem::discriminant(tile) == std::mem::discriminant(other)) as u8;
                 }
             }
         }
 
         count
     }
-}
 
-impl Board {
     /// Check if the board is initialized.
     fn initialized(&self) -> bool {
         (self.unrevealed as usize) < self.height() * self.width()
@@ -457,20 +454,6 @@ impl Board {
     }
 }
 
-impl Index<Position> for Board {
-    type Output = Tile;
-
-    fn index(&self, pos: Position) -> &Self::Output {
-        &self.tiles[pos.0][pos.1]
-    }
-}
-
-impl IndexMut<Position> for Board {
-    fn index_mut(&mut self, pos: Position) -> &mut Self::Output {
-        &mut self.tiles[pos.0][pos.1]
-    }
-}
-
 impl Display for Board {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         // Print top border
@@ -487,6 +470,20 @@ impl Display for Board {
 
         // Print bottom border
         write!(f, "└{}─┘", "──".repeat(self.width()))
+    }
+}
+
+impl Index<Position> for Board {
+    type Output = Tile;
+
+    fn index(&self, pos: Position) -> &Self::Output {
+        &self.tiles[pos.0][pos.1]
+    }
+}
+
+impl IndexMut<Position> for Board {
+    fn index_mut(&mut self, pos: Position) -> &mut Self::Output {
+        &mut self.tiles[pos.0][pos.1]
     }
 }
 

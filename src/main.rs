@@ -1,5 +1,6 @@
-use minesweeper::*;
 use std::io::{self, Write};
+
+use minesweeper::*;
 
 fn main() {
     println!("Welcome to Minesweeper!");
