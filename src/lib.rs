@@ -16,8 +16,8 @@ pub struct Minesweeper {
 
 impl Minesweeper {
     /// Create a new Minesweeper game.
-    pub fn new(config: Config) -> Minesweeper {
-        Minesweeper {
+    pub fn new(config: Config) -> Self {
+        Self {
             board: Board::new(config),
         }
     }
@@ -61,8 +61,8 @@ impl Config {
     /// Create a new game Config.
     ///
     /// `bombs` is taken as a hint, and is constrained by the board dimensions.
-    pub fn new(height: u8, width: u8, bombs: u16) -> Config {
-        Config {
+    pub fn new(height: u8, width: u8, bombs: u16) -> Self {
+        Self {
             height,
             width,
             bombs,
@@ -102,7 +102,7 @@ impl Board {
     ///
     /// The newly created board is not yet initialized.
     /// Bombs are placed as the first turn is played.
-    fn new(config: Config) -> Board {
+    fn new(config: Config) -> Self {
         let Config {
             height,
             width,
@@ -112,7 +112,7 @@ impl Board {
         let width = width as usize;
         let area = (height * width) as u16;
 
-        Board {
+        Self {
             tiles: vec![vec![Tile::Hidden(State::Empty); width]; height],
             detonation: None,
             bombs: cmp::min(bombs, area - 1),
@@ -546,8 +546,8 @@ pub struct Turn {
 
 impl Turn {
     /// Create a new Turn.
-    pub fn new(action: Action, pos: Position) -> Turn {
-        Turn { action, pos }
+    pub fn new(action: Action, pos: Position) -> Self {
+        Self { action, pos }
     }
 }
 
