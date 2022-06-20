@@ -1,7 +1,6 @@
 [package]
 name = "minesweeper"
 version = "0.1.0"
-authors = ["Zakhary Kaplan <zakharykaplan@gmail.com>"]
 edition = "2021"
 repository = "https://github.com/zakharykaplan/minesweeper"
 license = "MIT OR Apache-2.0"
